@@ -16,8 +16,7 @@ Number of GPUs: 1
 Number of CPUs (cores): N/A
 Total memory (GB): >=32GB
 ```
-Once session starts
-
+Once session starts, git clone this repository then follow local setup instructions
 
 ## Local Setup Instructions
 
@@ -82,3 +81,11 @@ NLPFinalProject/
 ## Embedding Models
 (Ollama names)
 - embeddinggemma
+
+# Misc
+If connecting to a specific Ollama installation host on PACE
+```python
+import os
+os.environ['OLLAMA_HOST'] # contains the localhost url and port
+# base_url = f'http://{os.environ['OLLAMA_HOST']}/v1',
+```

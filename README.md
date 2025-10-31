@@ -4,7 +4,22 @@
 
 This project evaluates information degradation in sequential multi-agent LLM systems through novel metrics that measure semantic drift during agent handoffs.
 
-## Setup Instructions
+## PACE ICE Setup Instructions
+Config:
+```bash
+Ollama + Jupyter (Beta)
+Python environment: default
+Ollama models directory: Tempoary directory
+Jupyter interface: Jupyter Notebook
+Node type: NVIDIA GPU (first avail)
+Number of GPUs: 1
+Number of CPUs (cores): N/A
+Total memory (GB): >=32GB
+```
+Once session starts
+
+
+## Local Setup Instructions
 
 ### 1. Make Scripts Executable
 ```bash
@@ -56,10 +71,14 @@ NLPFinalProject/
 ```
 
 ## Models Tested
-
+(Ollama names)
 - Qwen3:235b
 - Qwen3:8b
 - Llama3.1:70b
 - Llama3.1:7b
 - Gemma3:4b
 - GPT-OSS:20b
+
+## Embedding Models
+(Ollama names)
+- embeddinggemma

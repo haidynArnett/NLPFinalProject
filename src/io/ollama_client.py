@@ -1,6 +1,8 @@
-# src/io/ollama_client.py
 # Ollama API client for model inference
-# Handles model loading, inference requests, and response parsing
+
+# Derived from https://github.com/ollama/ollama-python
+# This class is a wrapper around the Ollama API client for this project and its needs
+
 from typing import List, Optional, Sequence, Dict, Any, TypedDict, Iterator
 import ollama
 import logging

@@ -6,22 +6,41 @@ echo "Checking if Ollama is installed..."
 
 # Check if ollama command exists
 if ! command -v ollama &> /dev/null; then
-    echo "❌ Ollama is not installed or not in PATH"
+    echo "Ollama is not installed or not in PATH"
     exit 1
 fi
 
-echo "✅ Ollama command found"
+echo "Ollama command found"
 
-# Check if Ollama service is running on localhost:11434
-echo "Checking if Ollama service is running on localhost..."
-
-if curl -s --max-time 5 http://localhost:11434/api/version &> /dev/null; then
-    echo "✅ Ollama service is available on localhost:11434"
+# Determine the host to check
+if [ -n "$OLLAMA_HOST" ]; then
+    # Use OLLAMA_HOST environment variable if set
+    OLLAMA_URL="$OLLAMA_HOST"
+    # Add http:// prefix if not present
+    if [[ ! "$OLLAMA_URL" =~ ^https?:// ]]; then
+        OLLAMA_URL="http://$OLLAMA_URL"
+    fi
+    echo "Using custom Ollama host from OLLAMA_HOST: $OLLAMA_URL"
 else
-    echo "❌ Ollama service is not responding on localhost:11434"
-    echo "   Make sure Ollama is running with 'ollama serve'"
+    # Default to localhost:11434
+    OLLAMA_URL="http://localhost:11434"
+    echo "Using default Ollama host: $OLLAMA_URL"
+fi
+
+# Check if Ollama service is running on the specified host
+echo "Checking if Ollama service is running..."
+
+if curl -s --max-time 5 "$OLLAMA_URL/api/version" &> /dev/null; then
+    echo "Ollama service is available at $OLLAMA_URL"
+else
+    echo "Ollama service is not responding at $OLLAMA_URL"
+    if [ -z "$OLLAMA_HOST" ]; then
+        echo "   Make sure Ollama is running with 'ollama serve'"
+    else
+        echo "   Make sure OLLAMA_HOST is set correctly and the service is running"
+    fi
     exit 1
 fi
 
-echo "🎉 Ollama is properly installed and available!"
+echo "Ollama is properly installed and available"
 exit 0

@@ -6,8 +6,7 @@ echo "Checking if Ollama is installed..."
 
 # Check if ollama command exists
 if ! command -v ollama &> /dev/null; then
-    echo "Ollama is not installed or not in PATH"
-    exit 1
+    echo "Ollama is not installed or not in PATH, This could make it hard to use Ollama via the command line"
 fi
 
 echo "Ollama command found"

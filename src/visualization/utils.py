@@ -9,3 +9,7 @@ def example_plot():
 # Example function
 def example_function():
     return "This is an example function"
+
+
+def visualize_cosine_similarity_matrix():
+    pass

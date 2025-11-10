@@ -5,8 +5,8 @@ from sklearn.metrics.pairwise import cosine_similarity
 import numpy as np
 
 def compute_cosine_similarity_matrix(restatements, embed):
-    restatement_embeddings = np.adarray([embed(restatement) for restatement in restatements])
-    similarity_matrix = cosine_similarity(restatement_embeddings[np.newaxis,:,:], restatement_embeddings[:,np.newaxis,:])
+    restatement_embeddings = np.array([embed(restatement) for restatement in restatements])
+    similarity_matrix = np.array([[cosine_similarity(np.expand_dims(restatement_embeddings[i,:], 0), np.expand_dims(restatement_embeddings[j,:], 0)) for i in range(len(restatements))]for j in range(len(restatements))]).squeeze()
     return similarity_matrix
 
 # calculates the cosine similarity between each hop for telephone test

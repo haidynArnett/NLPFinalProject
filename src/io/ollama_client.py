@@ -112,17 +112,18 @@ class OllamaClient:
             logger.info(f"Model '{model_name}' not found locally, attempting to pull...")
             _pull_model(model_name, self.client)
 
-    def generate_text(self, prompt: str) -> str:
+    def generate_text(self, prompt: str, format: Optional[dict] = None) -> str:
         """
         Generate text response from a prompt.
         
         Args:
             prompt: The input prompt text
+            format: Optional JSON schema to enforce structured output
             
         Returns:
             The generated text response (content only)
         """
-        resp = self.client.generate(model=self.model_name, prompt=prompt)
+        resp = self.client.generate(model=self.model_name, prompt=prompt, format=format)
         
         # Extract response text
         response_text = None
@@ -263,6 +264,11 @@ class OllamaClient:
     def clear_conversation_history(self) -> None:
         """Clear all conversation history."""
         self._conversation_history.clear()
+    
+    def remove_last_conversation(self) -> None:
+        """Remove the most recent conversation entry."""
+        if self._conversation_history:
+            self._conversation_history.pop()
     
     def get_conversation_count(self) -> int:
         """

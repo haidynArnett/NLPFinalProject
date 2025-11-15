@@ -142,10 +142,18 @@ class OllamaClient:
         
         # Log the full conversation if enabled
         if self.log_conversations:
+            # Extract details but exclude context array to save memory
+            if hasattr(resp, "__dict__"):
+                details = {k: v for k, v in resp.__dict__.items() if k != "context"}
+            elif isinstance(resp, dict):
+                details = {k: v for k, v in resp.items() if k != "context"}
+            else:
+                details = resp
+            
             conversation_entry: ConversationEntry = {
                 "input": prompt,
                 "response": response_text,
-                "details": resp.__dict__ if hasattr(resp, "__dict__") else resp,
+                "details": details,
                 "timestamp": datetime.now().isoformat()
             }
             self._conversation_history.append(conversation_entry)

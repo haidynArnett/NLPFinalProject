@@ -14,12 +14,13 @@ logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # TypedDict for conversation entry structure
-class ConversationEntry(TypedDict):
+class ConversationEntry(TypedDict, total=False):
     """Structure for a single conversation entry in history."""
     input: str
     response: str
     details: Dict[str, Any]
     timestamp: str
+    embedding: List[float]  # Optional: for experiments that need embeddings
 
 class SavedConversationData(TypedDict):
     """Structure for saved conversation history JSON files."""
@@ -269,6 +270,11 @@ class OllamaClient:
         """Remove the most recent conversation entry."""
         if self._conversation_history:
             self._conversation_history.pop()
+    
+    def add_embedding_to_last_conversation(self, embedding: List[float]) -> None:
+        """Add embedding to the most recent conversation entry."""
+        if self._conversation_history:
+            self._conversation_history[-1]["embedding"] = embedding
     
     def get_conversation_count(self) -> int:
         """

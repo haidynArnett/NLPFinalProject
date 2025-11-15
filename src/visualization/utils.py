@@ -350,3 +350,258 @@ def visualize_output_test_comparison(
     plt.grid(True, alpha=0.3)
     plt.tight_layout()
     plt.show()
+
+
+def visualize_telephone_test_aggregated(
+    experiment_name: str,
+    output_dir: str = "./experiments",
+    show_individual_runs: bool = False,
+    confidence_level: float = 0.95
+):
+    """
+    Visualize aggregated similarity decay from multiple telephone test runs.
+    
+    Shows cosine similarity to initial text over iterations with confidence bands.
+    
+    Args:
+        experiment_name: Base name of the experiment directory
+        output_dir: Base directory containing experiment folders
+        show_individual_runs: Whether to show individual run lines
+        confidence_level: Confidence level for error bands
+    """
+    from scipy import stats
+    from sklearn.metrics.pairwise import cosine_similarity as cosine_sim
+    
+    experiment_dir = Path(output_dir) / experiment_name
+    
+    if not experiment_dir.exists():
+        raise FileNotFoundError(f"Experiment directory not found: {experiment_dir}")
+    
+    run_dirs = sorted(experiment_dir.glob("run_*"))
+    if not run_dirs:
+        raise FileNotFoundError(f"No run subdirectories found in {experiment_dir}")
+    
+    print(f"Found {len(run_dirs)} runs to aggregate")
+    
+    all_runs_similarities = []
+    max_length = 0
+    
+    for run_dir in run_dirs:
+        conversation_files = sorted(run_dir.glob("conversation_history_*.json"))
+        if not conversation_files:
+            continue
+        
+        embeddings = []
+        
+        for filepath in conversation_files:
+            with open(filepath, 'r', encoding='utf-8') as f:
+                data = json.load(f)
+                conversations = data.get("conversations", [])
+                
+                for conv in conversations:
+                    embedding = conv.get("embedding")
+                    if embedding:
+                        embeddings.append(embedding)
+        
+        if embeddings and len(embeddings) > 0:
+            embeddings_array = np.array(embeddings)
+            initial_embedding = embeddings_array[0:1]
+            
+            # Compute similarity to initial text for each iteration
+            similarities = []
+            for i in range(len(embeddings_array)):
+                sim = cosine_sim(initial_embedding, embeddings_array[i:i+1])[0][0]
+                similarities.append(sim)
+            
+            all_runs_similarities.append(similarities)
+            max_length = max(max_length, len(similarities))
+    
+    if not all_runs_similarities:
+        print("No valid run data found")
+        return
+    
+    # Pad runs to same length
+    padded_runs = []
+    for run in all_runs_similarities:
+        if len(run) < max_length:
+            padded_run = run + [run[-1]] * (max_length - len(run))
+        else:
+            padded_run = run
+        padded_runs.append(padded_run)
+    
+    runs_array = np.array(padded_runs)
+    
+    # Calculate statistics
+    mean = np.mean(runs_array, axis=0)
+    std = np.std(runs_array, axis=0)
+    
+    n_runs = len(padded_runs)
+    df = n_runs - 1
+    confidence_coeff = stats.t.ppf((1 + confidence_level) / 2, df)
+    margin = confidence_coeff * (std / np.sqrt(n_runs))
+    
+    # Create visualization
+    plt.figure(figsize=(12, 7))
+    
+    x = np.arange(len(mean))
+    
+    # Plot individual runs if requested
+    if show_individual_runs:
+        for i, run in enumerate(padded_runs):
+            plt.plot(x, run, alpha=0.1, color='blue', linewidth=0.5)
+    
+    # Plot mean line
+    plt.plot(x, mean, 'r-', label=f'Mean Similarity (n={n_runs})', linewidth=2)
+    
+    # Plot confidence band
+    plt.fill_between(
+        x,
+        mean - margin,
+        mean + margin,
+        alpha=0.3,
+        color='red',
+        label=f'{int(confidence_level*100)}% Confidence Interval'
+    )
+    
+    plt.xlabel('Iteration', fontsize=12)
+    plt.ylabel('Cosine Similarity to Initial Text', fontsize=12)
+    plt.title(
+        f'{experiment_name} - Telephone Test\n'
+        f'{n_runs} runs, Final Similarity: {mean[-1]:.3f}',
+        fontsize=14,
+        fontweight='bold'
+    )
+    plt.legend(loc='best', fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.ylim([0, 1.05])
+    plt.tight_layout()
+    plt.show()
+    
+    # Print statistics
+    print(f"\n{'='*80}")
+    print(f"Aggregated Statistics for {experiment_name}")
+    print(f"{'='*80}")
+    print(f"Total runs analyzed: {n_runs}")
+    print(f"Iterations per run: {max_length}")
+    print(f"Initial similarity: {mean[0]:.4f}")
+    print(f"Final mean similarity: {mean[-1]:.4f}")
+    print(f"Similarity drop: {mean[0] - mean[-1]:.4f}")
+    print(f"Final std deviation: {std[-1]:.4f}")
+    print(f"{'='*80}\n")
+
+
+def visualize_telephone_test_comparison(
+    output_dir: str = "./experiments",
+    confidence_level: float = 0.95
+):
+    """
+    Compare all telephone test experiments with confidence intervals.
+    
+    Auto-discovers all subdirectories containing run_* folders.
+    
+    Args:
+        output_dir: Directory to search for experiments
+        confidence_level: Confidence level for error bands
+    """
+    from scipy import stats
+    from sklearn.metrics.pairwise import cosine_similarity as cosine_sim
+    
+    base_dir = Path(output_dir)
+    if not base_dir.exists():
+        print(f"Directory not found: {output_dir}")
+        return
+    
+    # Auto-discover telephone experiments
+    experiment_names = []
+    for item in sorted(base_dir.iterdir()):
+        if item.is_dir() and item.name.startswith("telephone_") and list(item.glob("run_*")):
+            experiment_names.append(item.name)
+    
+    if not experiment_names:
+        print(f"No telephone experiments found in {output_dir}")
+        return
+    
+    print(f"Found {len(experiment_names)} experiments: {experiment_names}")
+    
+    plt.figure(figsize=(12, 7))
+    colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'cyan', 'magenta']
+    
+    all_data = []
+    max_length = 0
+    
+    for exp_name in experiment_names:
+        experiment_dir = base_dir / exp_name
+        run_dirs = sorted(experiment_dir.glob("run_*"))
+        
+        all_runs_similarities = []
+        
+        for run_dir in run_dirs:
+            conversation_files = sorted(run_dir.glob("conversation_history_*.json"))
+            if not conversation_files:
+                continue
+            
+            embeddings = []
+            
+            for filepath in conversation_files:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    conversations = data.get("conversations", [])
+                    
+                    for conv in conversations:
+                        embedding = conv.get("embedding")
+                        if embedding:
+                            embeddings.append(embedding)
+            
+            if embeddings and len(embeddings) > 0:
+                embeddings_array = np.array(embeddings)
+                initial_embedding = embeddings_array[0:1]
+                
+                similarities = []
+                for i in range(len(embeddings_array)):
+                    sim = cosine_sim(initial_embedding, embeddings_array[i:i+1])[0][0]
+                    similarities.append(sim)
+                
+                all_runs_similarities.append(similarities)
+                max_length = max(max_length, len(similarities))
+        
+        if all_runs_similarities:
+            all_data.append((exp_name, all_runs_similarities))
+    
+    if not all_data:
+        print("No valid data found for any experiment")
+        return
+    
+    x = np.arange(max_length)
+    
+    for idx, (exp_name, runs) in enumerate(all_data):
+        padded_runs = []
+        for run in runs:
+            if len(run) < max_length:
+                padded_run = run + [run[-1]] * (max_length - len(run))
+            else:
+                padded_run = run
+            padded_runs.append(padded_run)
+        
+        runs_array = np.array(padded_runs)
+        mean = np.mean(runs_array, axis=0)
+        std = np.std(runs_array, axis=0)
+        
+        n_runs = len(padded_runs)
+        df = n_runs - 1
+        confidence_coeff = stats.t.ppf((1 + confidence_level) / 2, df)
+        margin = confidence_coeff * (std / np.sqrt(n_runs))
+        
+        color = colors[idx % len(colors)]
+        
+        plt.plot(x, mean, color=color, label=f'{exp_name} (n={n_runs})', linewidth=2)
+        plt.fill_between(x, mean - margin, mean + margin, alpha=0.2, color=color)
+    
+    plt.xlabel('Iteration', fontsize=12)
+    plt.ylabel('Cosine Similarity to Initial Text', fontsize=12)
+    plt.title(f'Model Comparison - Telephone Test\n{int(confidence_level*100)}% Confidence Intervals', 
+              fontsize=14, fontweight='bold')
+    plt.legend(loc='best', fontsize=10)
+    plt.grid(True, alpha=0.3)
+    plt.ylim([0, 1.05])
+    plt.tight_layout()
+    plt.show()

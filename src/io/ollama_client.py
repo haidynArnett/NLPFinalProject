@@ -14,12 +14,13 @@ logging.basicConfig(level=logging.WARNING)
 logger = logging.getLogger(__name__)
 
 # TypedDict for conversation entry structure
-class ConversationEntry(TypedDict):
+class ConversationEntry(TypedDict, total=False):
     """Structure for a single conversation entry in history."""
     input: str
     response: str
     details: Dict[str, Any]
     timestamp: str
+    embedding: List[float]  # Optional: for experiments that need embeddings
 
 class SavedConversationData(TypedDict):
     """Structure for saved conversation history JSON files."""
@@ -112,17 +113,18 @@ class OllamaClient:
             logger.info(f"Model '{model_name}' not found locally, attempting to pull...")
             _pull_model(model_name, self.client)
 
-    def generate_text(self, prompt: str) -> str:
+    def generate_text(self, prompt: str, format: Optional[dict] = None) -> str:
         """
         Generate text response from a prompt.
         
         Args:
             prompt: The input prompt text
+            format: Optional JSON schema to enforce structured output
             
         Returns:
             The generated text response (content only)
         """
-        resp = self.client.generate(model=self.model_name, prompt=prompt)
+        resp = self.client.generate(model=self.model_name, prompt=prompt, format=format)
         
         # Extract response text
         response_text = None
@@ -142,10 +144,18 @@ class OllamaClient:
         
         # Log the full conversation if enabled
         if self.log_conversations:
+            # Extract details but exclude context array to save memory
+            if hasattr(resp, "__dict__"):
+                details = {k: v for k, v in resp.__dict__.items() if k != "context"}
+            elif isinstance(resp, dict):
+                details = {k: v for k, v in resp.items() if k != "context"}
+            else:
+                details = resp
+            
             conversation_entry: ConversationEntry = {
                 "input": prompt,
                 "response": response_text,
-                "details": resp.__dict__ if hasattr(resp, "__dict__") else resp,
+                "details": details,
                 "timestamp": datetime.now().isoformat()
             }
             self._conversation_history.append(conversation_entry)
@@ -255,6 +265,16 @@ class OllamaClient:
     def clear_conversation_history(self) -> None:
         """Clear all conversation history."""
         self._conversation_history.clear()
+    
+    def remove_last_conversation(self) -> None:
+        """Remove the most recent conversation entry."""
+        if self._conversation_history:
+            self._conversation_history.pop()
+    
+    def add_embedding_to_last_conversation(self, embedding: List[float]) -> None:
+        """Add embedding to the most recent conversation entry."""
+        if self._conversation_history:
+            self._conversation_history[-1]["embedding"] = embedding
     
     def get_conversation_count(self) -> int:
         """

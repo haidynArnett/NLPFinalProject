@@ -1,3 +1,7 @@
+# ignore unzipped files in experiments
+experiments/*
+!experiments/*.zip
+
 # Python
 __pycache__/
 *.py[cod]

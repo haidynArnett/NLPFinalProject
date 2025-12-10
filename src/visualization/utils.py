@@ -371,6 +371,9 @@ def visualize_telephone_test_aggregated(
     """
     from scipy import stats
     from sklearn.metrics.pairwise import cosine_similarity as cosine_sim
+    import numpy as np
+    import matplotlib.pyplot as plt
+    from scipy.optimize import curve_fit
     
     experiment_dir = Path(output_dir) / experiment_name
     
@@ -444,7 +447,16 @@ def visualize_telephone_test_aggregated(
     plt.figure(figsize=(12, 7))
     
     x = np.arange(len(mean))
-    
+
+    # Fit logarithmic function
+    def log_func(x, a, b):
+        return -a * np.log(x + 1e-9) + b
+    popt, pcov = curve_fit(log_func, x, mean, p0=(1, 1))
+    # Plot fitted curve
+    # x_fit = np.linspace(min(x), max(x), 300)
+    # y_fit = log_func(x_fit, *popt)
+    plt.plot(x, log_func(x, *popt), color='black', linewidth=2, label='Fitted Log Curve')
+
     # Plot individual runs if requested
     if show_individual_runs:
         for i, run in enumerate(padded_runs):
@@ -603,5 +615,475 @@ def visualize_telephone_test_comparison(
     plt.legend(loc='best', fontsize=10)
     plt.grid(True, alpha=0.3)
     plt.ylim([0, 1.05])
+    plt.tight_layout()
+    plt.show()
+
+def visualize_telephone_log_functions(
+    output_dir: str = "./experiments",
+    confidence_level: float = 0.95
+):
+    """
+    Fit and plot logarithmic decay curves for each telephone-test experiment.
+    
+    Auto-discovers experiment directories by looking for subdirectories that
+    contain run_* folders. For each experiment, loads all runs, computes the mean
+    similarity decay curve, fits a logarithmic function, and visualizes the fit.
+    
+    Args:
+        output_dir: Directory containing experiment folders.
+        confidence_level: Confidence level for confidence bands.
+    """
+    from scipy import stats
+    from sklearn.metrics.pairwise import cosine_similarity as cosine_sim
+    from scipy.optimize import curve_fit
+    
+    base_dir = Path(output_dir)
+    if not base_dir.exists():
+        print(f"Directory not found: {output_dir}")
+        return
+
+    # ------------------------------------
+    # Auto-discover experiments
+    # ------------------------------------
+    experiment_names = []
+    for item in sorted(base_dir.iterdir()):
+        if item.is_dir() and list(item.glob("run_*")):
+            experiment_names.append(item.name)
+
+    if not experiment_names:
+        print(f"No experiments found in {output_dir}")
+        return
+
+    print(f"Found {len(experiment_names)} experiments: {experiment_names}")
+
+    # ------------------------------------
+    # Plot setup
+    # ------------------------------------
+    plt.figure(figsize=(12, 7))
+    # colors = ['red', 'blue', 'green', 'orange', 'purple', 'brown', 'cyan', 'magenta']
+    colors = [
+        "#1f77b4",  # Blue
+        "#ff7f0e",  # Orange
+        "#2ca02c",  # Green
+        "#d62728",  # Red
+        "#9467bd",  # Purple
+        "#8c564b",  # Brown
+        "#e377c2",  # Pink
+        "#7f7f7f",  # Gray
+        "#bcbd22",  # Olive
+        "#17becf",  # Cyan
+        "#aec7e8",  # Light Blue
+    ]
+
+    # ------------------------------------
+    # Process each experiment
+    # ------------------------------------
+    for idx, exp_name in enumerate(experiment_names):
+
+        experiment_dir = base_dir / exp_name
+        run_dirs = sorted(experiment_dir.glob("run_*"))
+
+        all_runs_similarities = []
+        max_length = 0
+
+        # ---- Load all run cosine similarity curves ----
+        for run_dir in run_dirs:
+            conversation_files = sorted(run_dir.glob("conversation_history_*.json"))
+            if not conversation_files:
+                continue
+
+            embeddings = []
+
+            for filepath in conversation_files:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    conversations = data.get("conversations", [])
+
+                    for conv in conversations:
+                        emb = conv.get("embedding")
+                        if emb:
+                            embeddings.append(emb)
+
+            if not embeddings:
+                continue
+
+            embeddings_array = np.array(embeddings)
+            initial_embedding = embeddings_array[0:1]
+
+            similarities = []
+            for i in range(len(embeddings_array)):
+                sim = cosine_sim(initial_embedding, embeddings_array[i:i+1])[0][0]
+                similarities.append(sim)
+
+            all_runs_similarities.append(similarities)
+            max_length = max(max_length, len(similarities))
+
+        if not all_runs_similarities:
+            print(f"No valid runs for experiment {exp_name}, skipping.")
+            continue
+
+        # ---- Pad runs ----
+        padded_runs = []
+        for run in all_runs_similarities:
+            if len(run) < max_length:
+                padded_run = run + [run[-1]] * (max_length - len(run))
+            else:
+                padded_run = run
+            padded_runs.append(padded_run)
+
+        runs_array = np.array(padded_runs)
+
+        # ---- Mean + CI ----
+        mean = np.mean(runs_array, axis=0)
+        std = np.std(runs_array, axis=0)
+
+        n_runs = len(padded_runs)
+        df = n_runs - 1
+        confidence_coeff = stats.t.ppf((1 + confidence_level) / 2, df)
+        margin = confidence_coeff * (std / np.sqrt(n_runs))
+
+        x = np.arange(len(mean))
+        color = colors[idx % len(colors)]
+
+        # ------------------------------------
+        # Fit logarithmic function to mean curve
+        # ------------------------------------
+        def log_func(x, a, b):
+            # Same structure you used earlier
+            return -a * np.log(x + 1e-9) + b
+
+        try:
+            popt, pcov = curve_fit(log_func, x, mean, p0=(1, 1))
+            fitted_y = log_func(x, *popt)
+            log_label = f"{exp_name} Log Fit (a={popt[0]:.3f}, b={popt[1]:.3f})"
+        except Exception as e:
+            print(f"Curve fit failed for {exp_name}: {e}")
+            fitted_y = None
+
+        # ------------------------------------
+        # Plot
+        # ------------------------------------
+        plt.plot(x, mean, color=color, linewidth=2, label=f"{exp_name} Mean (n={n_runs})")
+        plt.fill_between(x, mean - margin, mean + margin, alpha=0.15, color=color)
+
+        if fitted_y is not None:
+            plt.plot(x, fitted_y, '--', color=color, linewidth=2, label=log_label)
+
+    # ------------------------------------
+    # Final plot setup
+    # ------------------------------------
+    plt.xlabel("Iteration", fontsize=12)
+    plt.ylabel("Cosine Similarity", fontsize=12)
+    plt.title("Logarithmic Fits for Telephone Test Experiments", fontsize=14, fontweight='bold')
+    plt.grid(True, alpha=0.3)
+    # plt.legend(fontsize=10)
+    plt.legend(bbox_to_anchor=(1.05, 1), loc='upper left', borderaxespad=0., fontsize=10)
+    plt.show()
+
+def visualize_telephone_log_functions_separate(
+    output_dir: str = "./experiments",
+    confidence_level: float = 0.95
+):
+    """
+    For each telephone test experiment, generate a **separate visualization** with:
+    - mean similarity curve
+    - confidence interval
+    - logarithmic decay curve fit
+    
+    Args:
+        output_dir: Directory of experiments
+        confidence_level: Confidence interval level
+    """
+    from scipy import stats
+    from sklearn.metrics.pairwise import cosine_similarity as cosine_sim
+    from scipy.optimize import curve_fit
+
+    base_dir = Path(output_dir)
+    if not base_dir.exists():
+        print(f"Directory not found: {output_dir}")
+        return
+
+    # Discover experiments
+    experiment_names = []
+    for item in sorted(base_dir.iterdir()):
+        if item.is_dir() and list(item.glob("run_*")):
+            experiment_names.append(item.name)
+
+    if not experiment_names:
+        print(f"No experiments found in {output_dir}")
+        return
+
+    print(f"Found {len(experiment_names)} experiments: {experiment_names}")
+
+    # Process each experiment individually
+    for exp_name in experiment_names:
+
+        experiment_dir = base_dir / exp_name
+        run_dirs = sorted(experiment_dir.glob("run_*"))
+
+        all_runs_similarities = []
+        max_length = 0
+
+        # Load all runs
+        for run_dir in run_dirs:
+            conversation_files = sorted(run_dir.glob("conversation_history_*.json"))
+            if not conversation_files:
+                continue
+
+            embeddings = []
+            for filepath in conversation_files:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    conversations = data.get("conversations", [])
+
+                    for conv in conversations:
+                        emb = conv.get("embedding")
+                        if emb:
+                            embeddings.append(emb)
+
+            if not embeddings:
+                continue
+
+            embeddings_array = np.array(embeddings)
+            initial_embedding = embeddings_array[0:1]
+
+            similarities = []
+            for i in range(len(embeddings_array)):
+                sim = cosine_sim(initial_embedding, embeddings_array[i:i+1])[0][0]
+                similarities.append(sim)
+
+            all_runs_similarities.append(similarities)
+            max_length = max(max_length, len(similarities))
+
+        if not all_runs_similarities:
+            print(f"No valid runs for experiment {exp_name}")
+            continue
+
+        # Pad runs
+        padded_runs = []
+        for run in all_runs_similarities:
+            if len(run) < max_length:
+                padded_run = run + [run[-1]] * (max_length - len(run))
+            else:
+                padded_run = run
+            padded_runs.append(padded_run)
+
+        runs_array = np.array(padded_runs)
+
+        mean = np.mean(runs_array, axis=0)
+        std = np.std(runs_array, axis=0)
+
+        n_runs = len(padded_runs)
+        df = n_runs - 1
+        confidence_coeff = stats.t.ppf((1 + confidence_level) / 2, df)
+        margin = confidence_coeff * (std / np.sqrt(n_runs))
+
+        x = np.arange(len(mean))
+
+        # Fit log curve
+        def log_func(x, a, b):
+            return -a * np.log(x + 1e-9) + b
+
+        try:
+            popt, pcov = curve_fit(log_func, x, mean, p0=(1, 1))
+            fitted_y = log_func(x, *popt)
+        except Exception as e:
+            print(f"Curve fit failed for {exp_name}: {e}")
+            fitted_y = None
+
+        # ---------------------------------------------------------
+        # Separate visualization per model
+        # ---------------------------------------------------------
+        plt.figure(figsize=(12, 7))
+
+        plt.plot(x, mean, label=f"Mean (n={n_runs})", color="blue", linewidth=2)
+        plt.fill_between(x, mean - margin, mean + margin,
+                         alpha=0.3, color="blue",
+                         label=f"{int(confidence_level*100)}% Confidence Interval")
+
+        if fitted_y is not None:
+            plt.plot(x, fitted_y, '--', color="black",
+                     linewidth=2,
+                     label=f"Log Fit (a={popt[0]:.3f}, b={popt[1]:.3f})")
+
+        plt.ylim([0, 1.05])
+        plt.xlabel("Iteration", fontsize=12)
+        plt.ylabel("Cosine Similarity", fontsize=12)
+
+        plt.title(
+            f"{exp_name} — Telephone Test\n"
+            f"{n_runs} runs, Final similarity: {mean[-1]:.3f}",
+            fontsize=14, fontweight='bold'
+        )
+
+        plt.legend(loc="best", fontsize=10)
+        plt.grid(True, alpha=0.3)
+        plt.tight_layout()
+        plt.show()
+
+def visualize_compare_model_parameters():
+    model_parameters_map = {
+        'telephone_gemma3_1b-it-fp16': 1e9,
+        'telephone_gemma3_1b-it-q4_K_M': 1e9,
+        'telephone_gemma3_1b-it-q8_0': 1e9,
+        'telephone_gemma3_1b-it-qat': 1e9,
+        'telephone_gemma3_270m-it-bf16': 270e6,
+        'telephone_gemma3_270m-it-q8_0': 270e6,
+        'telephone_gemma3_270m-it-qat': 270e6,
+        'telephone_gemma3_4b-it-fp16': 4e9,
+        'telephone_gemma3_4b-it-q4_K_M': 4e9,
+        'telephone_gemma3_4b-it-q8_0': 4e9,
+        'telephone_gemma3_4b-it-qat': 4e9
+    }
+
+def visualize_param_vs_performance(
+    model_params: dict,
+    output_dir: str = "./experiments",
+    iteration: int = 20,
+    confidence_level: float = 0.95,
+):
+    """
+    Compute log-fit parameters directly from experiment data and visualize
+    predicted performance at a given iteration (default = 20) as a function
+    of model parameter count.
+
+    Args:
+        model_params: dict mapping model_name → parameter_count
+        output_dir: directory with the experiment folders
+        iteration: iteration number at which to evaluate the log fit
+        confidence_level: unused but kept for consistency
+    """
+    from scipy.optimize import curve_fit
+    from sklearn.metrics.pairwise import cosine_similarity as cosine_sim
+    from scipy import stats
+
+    base_dir = Path(output_dir)
+    if not base_dir.exists():
+        print(f"Directory not found: {output_dir}")
+        return
+
+    # Auto-discover experiments
+    experiment_names = []
+    for item in sorted(base_dir.iterdir()):
+        if item.is_dir() and list(item.glob("run_*")):
+            experiment_names.append(item.name)
+
+    if not experiment_names:
+        print(f"No experiments found in {output_dir}")
+        return
+
+    # ---- storage ----
+    predicted_at_iteration = {}
+    fitted_params = {}
+
+    # =========================================================
+    # Process each experiment / model
+    # =========================================================
+    for exp_name in experiment_names:
+        experiment_dir = base_dir / exp_name
+        run_dirs = sorted(experiment_dir.glob("run_*"))
+
+        all_runs_sim = []
+        max_length = 0
+
+        # ---- Load all similarity sequences for this experiment ----
+        for run_dir in run_dirs:
+            conversation_files = sorted(run_dir.glob("conversation_history_*.json"))
+            embeddings = []
+
+            for filepath in conversation_files:
+                with open(filepath, 'r', encoding='utf-8') as f:
+                    data = json.load(f)
+                    conversations = data.get("conversations", [])
+
+                    for conv in conversations:
+                        emb = conv.get("embedding")
+                        if emb:
+                            embeddings.append(emb)
+
+            if len(embeddings) == 0:
+                continue
+
+            emb_array = np.array(embeddings)
+            initial = emb_array[0:1]
+
+            similarities = []
+            for i in range(len(emb_array)):
+                sim = cosine_sim(initial, emb_array[i:i+1])[0][0]
+                similarities.append(sim)
+
+            all_runs_sim.append(similarities)
+            max_length = max(max_length, len(similarities))
+
+        if len(all_runs_sim) == 0:
+            print(f"No usable runs for {exp_name}; skipping.")
+            continue
+
+        # ---- Pad runs for consistent length ----
+        padded_runs = []
+        for run in all_runs_sim:
+            if len(run) < max_length:
+                run = run + [run[-1]] * (max_length - len(run))
+            padded_runs.append(run)
+
+        runs_array = np.array(padded_runs)
+        mean = np.mean(runs_array, axis=0)
+        x = np.arange(len(mean))
+
+        # =========================================================
+        # Fit the logarithmic function
+        # =========================================================
+        def log_func(x, a, b):
+            return -a * np.log(x + 1e-9) + b
+
+        try:
+            popt, pcov = curve_fit(log_func, x, mean, p0=(0.1, 1.0))
+        except Exception as e:
+            print(f"Log fit failed for {exp_name}: {e}")
+            continue
+
+        fitted_params[exp_name] = popt
+
+        # ---- Evaluate fitted curve at desired iteration ----
+        pred = log_func(iteration, *popt)
+        predicted_at_iteration[exp_name] = pred
+
+    # =========================================================
+    # Scatter plot: param_count vs predicted performance
+    # =========================================================
+    xs = []
+    ys = []
+    labels = []
+
+    for model_name, pred_y in predicted_at_iteration.items():
+        if model_name not in model_params:
+            print(f"Warning: {model_name} missing from model_params; skipping.")
+            continue
+
+        xs.append(model_params[model_name])
+        ys.append(pred_y)
+        labels.append(model_name)
+
+    xs = np.array(xs)
+    ys = np.array(ys)
+
+    # ---- Plot ----
+    plt.figure(figsize=(10, 6))
+    plt.scatter(xs, ys, s=120, alpha=0.9)
+
+    # Label each point
+    for i, name in enumerate(labels):
+        plt.text(xs[i] * 1.02, ys[i], name, fontsize=10)
+
+    plt.title(
+        f"Predicted Telephone-Test Performance at Iteration {iteration}\n"
+        "Based on Log Fit Parameters",
+        fontsize=14,
+        fontweight="bold",
+    )
+    plt.xlabel("Model Parameter Count", fontsize=12)
+    plt.ylabel("Predicted Similarity", fontsize=12)
+    plt.grid(True, alpha=0.3)
+    plt.legend()
     plt.tight_layout()
     plt.show()
